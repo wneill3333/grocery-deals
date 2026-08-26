@@ -149,6 +149,7 @@
     color: white;
     margin-left: 6px;
   }
+  .badge.match-badge { background: #2b6cb0; }
   .clip-link {
     display: inline-block;
     margin-top: 8px;
@@ -216,6 +217,7 @@
       <button class="tab-btn active" data-tab="weekly_deals">Weekly Deals</button>
       <button class="tab-btn" data-tab="want_list">Want List</button>
       <button class="tab-btn" data-tab="digital_coupons">Digital Coupons</button>
+      <button class="tab-btn" data-tab="my_matches">For My Want List</button>
     </div>
 
     <div class="filters" id="filters"></div>
@@ -333,7 +335,7 @@ function renderFilters() {
   const catOptions = `<option value="">All categories</option>` + CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join("");
 
   let html = `<select id="f-store">${storeOptions}</select>`;
-  if (currentTab !== "want_list") {
+  if (currentTab !== "want_list" && currentTab !== "my_matches") {
     html += `<select id="f-category">${catOptions}</select>`;
   }
   html += `<input type="text" id="f-search" placeholder="Search itemâ¦">`;
@@ -379,6 +381,24 @@ async function loadData() {
     if (currentFilters.store) q = q.eq("store", currentFilters.store);
     if (currentFilters.q) q = q.ilike("item", `%${currentFilters.q}%`);
     ({ data: rows, error } = await q);
+  } else if (currentTab === "my_matches") {
+    // Anything in Weekly Deals or Digital Coupons tagged as matching a Want List item.
+    let wq = sb.from("weekly_deals").select("*").not("matches_want_list_item", "is", null);
+    let cq = sb.from("digital_coupons").select("*").not("matches_want_list_item", "is", null);
+    if (currentFilters.store) { wq = wq.eq("store", currentFilters.store); cq = cq.eq("store", currentFilters.store); }
+    if (currentFilters.q) { wq = wq.ilike("matches_want_list_item", `%${currentFilters.q}%`); cq = cq.ilike("matches_want_list_item", `%${currentFilters.q}%`); }
+    const [wRes, cRes] = await Promise.all([wq, cq]);
+    if (wRes.error) error = wRes.error;
+    else if (cRes.error) error = cRes.error;
+    else {
+      const weeklyRows = (wRes.data || []).map(r => ({ ...r, _source: "weekly_deals" }));
+      const couponRows = (cRes.data || []).map(r => ({ ...r, _source: "digital_coupons" }));
+      rows = weeklyRows.concat(couponRows).sort((a, b) => {
+        const byItem = (a.matches_want_list_item || "").localeCompare(b.matches_want_list_item || "");
+        if (byItem !== 0) return byItem;
+        return (a._source === "digital_coupons" ? 0 : 1) - (b._source === "digital_coupons" ? 0 : 1);
+      });
+    }
   }
 
   if (error) {
@@ -390,19 +410,24 @@ async function loadData() {
   countEl.textContent = `${rows.length} result${rows.length === 1 ? "" : "s"}`;
 
   if (!rows.length) {
-    resultsEl.innerHTML = `<div class="empty-state">No matching results yet. Try a different filter, or check back after the next scheduled pull.</div>`;
+    const emptyMsg = currentTab === "my_matches"
+      ? "No coupons or deals matched to your Want List yet. Check back after the next scheduled pull."
+      : "No matching results yet. Try a different filter, or check back after the next scheduled pull.";
+    resultsEl.innerHTML = `<div class="empty-state">${emptyMsg}</div>`;
     return;
   }
 
-  resultsEl.innerHTML = rows.map(r => renderCard(currentTab, r)).join("");
+  resultsEl.innerHTML = rows.map(r => renderCard(currentTab === "my_matches" ? r._source : currentTab, r, currentTab === "my_matches")).join("");
 }
 
-function renderCard(tab, r) {
+function renderCard(tab, r, showMatch) {
+  const matchTag = (showMatch && r.matches_want_list_item)
+    ? `<span class="badge match-badge">Matches: ${esc(r.matches_want_list_item)}</span>` : "";
   if (tab === "weekly_deals") {
     return `
       <div class="deal-card ${r.notable ? "notable" : ""}">
         <div class="deal-top">
-          <span class="deal-item">${esc(r.item)}${r.notable ? '<span class="badge">Notable</span>' : ''}</span>
+          <span class="deal-item">${esc(r.item)}${r.notable ? '<span class="badge">Notable</span>' : ''}${matchTag}</span>
           <span class="deal-price">${esc(r.price || "")}${r.unit ? " / " + esc(r.unit) : ""}</span>
         </div>
         <div class="deal-meta">${esc(r.store)} Â· ${esc(r.category)}${r.sale_end ? " Â· through " + esc(r.sale_end) : ""}</div>
@@ -427,7 +452,7 @@ function renderCard(tab, r) {
   return `
     <div class="deal-card">
       <div class="deal-top">
-        <span class="deal-item">${esc(r.item || r.description || "Coupon")}</span>
+        <span class="deal-item">${esc(r.item || r.description || "Coupon")}${matchTag}</span>
         ${r.savings ? `<span class="deal-price">${esc(r.savings)}</span>` : ""}
       </div>
       <div class="deal-meta">${esc(r.store)}</div>
