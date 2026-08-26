@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<meta name="theme-color" content="#1b6e3c">
+<title>North County Grocery Deals</title>
+<style>
+  :root {
+    --green: #1b6e3c;
+    --green-dark: #145a30;
+    --bg: #f5f7f5;
+    --card: #ffffff;
+    --border: #e0e4e0;
+    --text: #1f2a24;
+    --muted: #667069;
+    --notable: #fff4d6;
+    --notable-border: #e0b429;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    background: var(--green);
+    color: white;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  header h1 {
+    font-size: 17px;
+    margin: 0;
+    font-weight: 600;
+  }
+  header button {
+    background: rgba(255,255,255,0.15);
+    border: none;
+    color: white;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  header button:hover { background: rgba(255,255,255,0.25); }
+
+  main { max-width: 900px; margin: 0 auto; padding: 12px; }
+
+  /* Login / set-password screens */
+  .auth-wrap {
+    max-width: 380px;
+    margin: 60px auto;
+    padding: 28px 24px;
+    background: var(--card);
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  }
+  .auth-wrap h2 { margin-top: 0; text-align: center; color: var(--green-dark); }
+  .auth-wrap p.sub { text-align: center; color: var(--muted); font-size: 14px; margin-top: -8px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 4px; }
+  input[type=email], input[type=password], input[type=text], select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 15px;
+    background: white;
+    color: var(--text);
+  }
+  .btn-primary {
+    width: 100%;
+    margin-top: 20px;
+    padding: 11px;
+    background: var(--green);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-primary:hover { background: var(--green-dark); }
+  .btn-primary:disabled { opacity: 0.6; cursor: default; }
+  .error-msg { color: #b3261e; font-size: 13px; margin-top: 10px; text-align: center; }
+  .info-msg { color: var(--muted); font-size: 13px; margin-top: 10px; text-align: center; }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 6px;
+    margin: 14px 0 10px;
+    overflow-x: auto;
+  }
+  .tab-btn {
+    flex: 0 0 auto;
+    padding: 8px 14px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: white;
+    color: var(--text);
+    font-size: 14px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .tab-btn.active { background: var(--green); color: white; border-color: var(--green); }
+
+  /* Filters */
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .filters > * { flex: 1 1 140px; }
+
+  /* Cards */
+  .card-list { display: flex; flex-direction: column; gap: 8px; }
+  .deal-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .deal-card.notable { background: var(--notable); border-color: var(--notable-border); }
+  .deal-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .deal-item { font-weight: 600; font-size: 15px; }
+  .deal-price { font-weight: 700; color: var(--green-dark); font-size: 15px; white-space: nowrap; }
+  .deal-meta { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .deal-notes { font-size: 13px; margin-top: 6px; color: var(--text); }
+  .badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 10px;
+    background: var(--green);
+    color: white;
+    margin-left: 6px;
+  }
+  .clip-link {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--green-dark);
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .clip-link:hover { text-decoration: underline; }
+  .empty-state {
+    text-align: center;
+    color: var(--muted);
+    padding: 40px 10px;
+    font-size: 14px;
+  }
+  .loading { text-align: center; color: var(--muted); padding: 30px; font-size: 14px; }
+  .count-row { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+
+  #app-screen { display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🛒 North County Grocery Deals</h1>
+  <button id="logout-btn" style="display:none;">Log out</button>
+</header>
+
+<!-- LOGIN SCREEN -->
+<div id="login-screen">
+  <div class="auth-wrap">
+    <h2>Sign in</h2>
+    <p class="sub">Bill &amp; Selaina's shared deals tracker</p>
+    <form id="login-form">
+      <label for="login-email">Email</label>
+      <input type="email" id="login-email" required autocomplete="email">
+      <label for="login-password">Password</label>
+      <input type="password" id="login-password" required autocomplete="current-password">
+      <button type="submit" class="btn-primary" id="login-btn">Sign in</button>
+      <div class="error-msg" id="login-error"></div>
+    </form>
+  </div>
+</div>
+
+<!-- SET PASSWORD SCREEN (shown after clicking an invite/reset email link) -->
+<div id="setpw-screen" style="display:none;">
+  <div class="auth-wrap">
+    <h2>Set your password</h2>
+    <p class="sub">Choose a password for your account</p>
+    <form id="setpw-form">
+      <label for="setpw-password">New password</label>
+      <input type="password" id="setpw-password" required minlength="6" autocomplete="new-password">
+      <label for="setpw-password2">Confirm password</label>
+      <input type="password" id="setpw-password2" required minlength="6" autocomplete="new-password">
+      <button type="submit" class="btn-primary" id="setpw-btn">Save password &amp; continue</button>
+      <div class="error-msg" id="setpw-error"></div>
+    </form>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app-screen">
+  <main>
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="weekly_deals">Weekly Deals</button>
+      <button class="tab-btn" data-tab="want_list">Want List</button>
+      <button class="tab-btn" data-tab="digital_coupons">Digital Coupons</button>
+    </div>
+
+    <div class="filters" id="filters"></div>
+    <div class="count-row" id="count-row"></div>
+    <div id="results" class="card-list"><div class="loading">Loading…</div></div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+const SUPABASE_URL = "https://msvqftqcnianiwramndq.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_G52DGh6WwcFuq_IkH97OLQ_5f5Rb5M_";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const STORES = ["WinCo","Stater Bros","Albertsons","Ralphs","Grocery Outlet","Vons","Walmart","Smart & Final","Sprouts Farmers Market","CVS","Walgreens"];
+const CATEGORIES = ["Produce","Meat & Seafood","Dairy & Eggs","Bakery","Frozen","Pantry/Canned & Dry Goods","Beverages","Snacks","Household & Cleaning","Health & Beauty","Baby & Kids","Pet Supplies","Other"];
+
+let currentTab = "weekly_deals";
+let currentFilters = { store: "", category: "", q: "" };
+
+const loginScreen = document.getElementById("login-screen");
+const setpwScreen = document.getElementById("setpw-screen");
+const appScreen = document.getElementById("app-screen");
+const logoutBtn = document.getElementById("logout-btn");
+
+function showScreen(name) {
+  loginScreen.style.display = name === "login" ? "block" : "none";
+  setpwScreen.style.display = name === "setpw" ? "block" : "none";
+  appScreen.style.display = name === "app" ? "block" : "none";
+  logoutBtn.style.display = name === "app" ? "inline-block" : "none";
+}
+
+// --- Auth wiring ---
+const hash = window.location.hash;
+let cameFromInviteOrRecovery = /type=invite|type=recovery/.test(hash);
+
+sb.auth.onAuthStateChange((event, session) => {
+  if (event === "PASSWORD_RECOVERY" || (cameFromInviteOrRecovery && session)) {
+    showScreen("setpw");
+    cameFromInviteOrRecovery = false; // only force this once
+  } else if (session) {
+    showScreen("app");
+    initApp();
+  } else {
+    showScreen("login");
+  }
+});
+
+sb.auth.getSession().then(({ data }) => {
+  if (!data.session && !cameFromInviteOrRecovery) {
+    showScreen("login");
+  }
+});
+
+document.getElementById("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = document.getElementById("login-email").value.trim();
+  const password = document.getElementById("login-password").value;
+  const btn = document.getElementById("login-btn");
+  const errEl = document.getElementById("login-error");
+  errEl.textContent = "";
+  btn.disabled = true;
+  btn.textContent = "Signing in…";
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  btn.disabled = false;
+  btn.textContent = "Sign in";
+  if (error) errEl.textContent = error.message;
+});
+
+document.getElementById("setpw-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const p1 = document.getElementById("setpw-password").value;
+  const p2 = document.getElementById("setpw-password2").value;
+  const errEl = document.getElementById("setpw-error");
+  errEl.textContent = "";
+  if (p1 !== p2) { errEl.textContent = "Passwords don't match."; return; }
+  const btn = document.getElementById("setpw-btn");
+  btn.disabled = true;
+  btn.textContent = "Saving…";
+  const { error } = await sb.auth.updateUser({ password: p1 });
+  btn.disabled = false;
+  btn.textContent = "Save password & continue";
+  if (error) { errEl.textContent = error.message; return; }
+  history.replaceState(null, "", window.location.pathname);
+  showScreen("app");
+  initApp();
+});
+
+logoutBtn.addEventListener("click", async () => {
+  await sb.auth.signOut();
+  showScreen("login");
+});
+
+// --- App logic ---
+let appInited = false;
+function initApp() {
+  if (appInited) { loadData(); return; }
+  appInited = true;
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      currentTab = btn.dataset.tab;
+      renderFilters();
+      loadData();
+    });
+  });
+  renderFilters();
+  loadData();
+}
+
+function renderFilters() {
+  const el = document.getElementById("filters");
+  const storeOptions = `<option value="">All stores</option>` + STORES.map(s => `<option value="${s}">${s}</option>`).join("");
+  const catOptions = `<option value="">All categories</option>` + CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join("");
+
+  let html = `<select id="f-store">${storeOptions}</select>`;
+  if (currentTab !== "want_list") {
+    html += `<select id="f-category">${catOptions}</select>`;
+  }
+  html += `<input type="text" id="f-search" placeholder="Search item…">`;
+  el.innerHTML = html;
+
+  document.getElementById("f-store").value = currentFilters.store;
+  document.getElementById("f-store").addEventListener("change", (e) => { currentFilters.store = e.target.value; loadData(); });
+  const catSel = document.getElementById("f-category");
+  if (catSel) {
+    catSel.value = currentFilters.category;
+    catSel.addEventListener("change", (e) => { currentFilters.category = e.target.value; loadData(); });
+  }
+  const searchEl = document.getElementById("f-search");
+  searchEl.value = currentFilters.q;
+  let debounceTimer;
+  searchEl.addEventListener("input", (e) => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => { currentFilters.q = e.target.value; loadData(); }, 300);
+  });
+}
+
+async function loadData() {
+  const resultsEl = document.getElementById("results");
+  const countEl = document.getElementById("count-row");
+  resultsEl.innerHTML = `<div class="loading">Loading…</div>`;
+
+  let rows = [];
+  let error = null;
+
+  if (currentTab === "weekly_deals") {
+    let q = sb.from("weekly_deals").select("*").order("notable", { ascending: false }).order("date_pulled", { ascending: false });
+    if (currentFilters.store) q = q.eq("store", currentFilters.store);
+    if (currentFilters.category) q = q.eq("category", currentFilters.category);
+    if (currentFilters.q) q = q.ilike("item", `%${currentFilters.q}%`);
+    ({ data: rows, error } = await q);
+  } else if (currentTab === "want_list") {
+    let q = sb.from("want_list").select("*").order("item", { ascending: true });
+    if (currentFilters.store) q = q.eq("best_deal_store", currentFilters.store);
+    if (currentFilters.q) q = q.ilike("item", `%${currentFilters.q}%`);
+    ({ data: rows, error } = await q);
+  } else if (currentTab === "digital_coupons") {
+    let q = sb.from("digital_coupons").select("*").order("date_pulled", { ascending: false });
+    if (currentFilters.store) q = q.eq("store", currentFilters.store);
+    if (currentFilters.q) q = q.ilike("item", `%${currentFilters.q}%`);
+    ({ data: rows, error } = await q);
+  }
+
+  if (error) {
+    resultsEl.innerHTML = `<div class="empty-state">Couldn't load data: ${error.message}</div>`;
+    countEl.textContent = "";
+    return;
+  }
+
+  countEl.textContent = `${rows.length} result${rows.length === 1 ? "" : "s"}`;
+
+  if (!rows.length) {
+    resultsEl.innerHTML = `<div class="empty-state">No matching results yet. Try a different filter, or check back after the next scheduled pull.</div>`;
+    return;
+  }
+
+  resultsEl.innerHTML = rows.map(r => renderCard(currentTab, r)).join("");
+}
+
+function renderCard(tab, r) {
+  if (tab === "weekly_deals") {
+    return `
+      <div class="deal-card ${r.notable ? "notable" : ""}">
+        <div class="deal-top">
+          <span class="deal-item">${esc(r.item)}${r.notable ? '<span class="badge">Notable</span>' : ''}</span>
+          <span class="deal-price">${esc(r.price || "")}${r.unit ? " / " + esc(r.unit) : ""}</span>
+        </div>
+        <div class="deal-meta">${esc(r.store)} · ${esc(r.category)}${r.sale_end ? " · through " + esc(r.sale_end) : ""}</div>
+        ${r.notes ? `<div class="deal-notes">${esc(r.notes)}</div>` : ""}
+      </div>`;
+  }
+  if (tab === "want_list") {
+    return `
+      <div class="deal-card">
+        <div class="deal-top">
+          <span class="deal-item">${esc(r.item)}</span>
+          <span class="deal-price">${esc(r.best_deal_price || "—")}</span>
+        </div>
+        <div class="deal-meta">${esc(r.category || "")}${r.priority ? " · Priority " + esc(r.priority) : ""}</div>
+        ${r.best_deal_found ? `<div class="deal-notes"><strong>Best deal:</strong> ${esc(r.best_deal_found)}${r.best_deal_store ? " at " + esc(r.best_deal_store) : ""}</div>` : ""}
+        ${r.deal_source ? `<div class="deal-meta">${esc(r.deal_source)}${r.est_savings ? " · Save " + esc(r.est_savings) : ""}</div>` : ""}
+        ${r.where_to_clip ? `<div class="deal-notes">${esc(r.where_to_clip)}</div>` : ""}
+      </div>`;
+  }
+  // digital_coupons
+  return `
+    <div class="deal-card">
+      <div class="deal-top">
+        <span class="deal-item">${esc(r.item || r.description || "Coupon")}</span>
+        ${r.savings ? `<span class="deal-price">${esc(r.savings)}</span>` : ""}
+      </div>
+      <div class="deal-meta">${esc(r.store)}</div>
+      ${r.description ? `<div class="deal-notes">${esc(r.description)}</div>` : ""}
+      ${r.clip_url ? `<a class="clip-link" href="${esc(r.clip_url)}" target="_blank" rel="noopener">Clip this coupon →</a>` : ""}
+    </div>`;
+}
+
+function esc(s) {
+  if (s === null || s === undefined) return "";
+  return String(s).replace(/[&<>"']/g, m => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[m]));
+}
+</script>
+</body>
+</html>
