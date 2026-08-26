@@ -174,7 +174,7 @@
 <body>
 
 <header>
-  <h1>ð North County Grocery Deals</h1>
+  <h1>🛒 North County Grocery Deals</h1>
   <button id="logout-btn" style="display:none;">Log out</button>
 </header>
 
@@ -222,7 +222,7 @@
 
     <div class="filters" id="filters"></div>
     <div class="count-row" id="count-row"></div>
-    <div id="results" class="card-list"><div class="loading">Loadingâ¦</div></div>
+    <div id="results" class="card-list"><div class="loading">Loading…</div></div>
   </main>
 </div>
 
@@ -280,7 +280,7 @@ document.getElementById("login-form").addEventListener("submit", async (e) => {
   const errEl = document.getElementById("login-error");
   errEl.textContent = "";
   btn.disabled = true;
-  btn.textContent = "Signing inâ¦";
+  btn.textContent = "Signing in…";
   const { error } = await sb.auth.signInWithPassword({ email, password });
   btn.disabled = false;
   btn.textContent = "Sign in";
@@ -296,7 +296,7 @@ document.getElementById("setpw-form").addEventListener("submit", async (e) => {
   if (p1 !== p2) { errEl.textContent = "Passwords don't match."; return; }
   const btn = document.getElementById("setpw-btn");
   btn.disabled = true;
-  btn.textContent = "Savingâ¦";
+  btn.textContent = "Saving…";
   const { error } = await sb.auth.updateUser({ password: p1 });
   btn.disabled = false;
   btn.textContent = "Save password & continue";
@@ -338,7 +338,7 @@ function renderFilters() {
   if (currentTab !== "want_list" && currentTab !== "my_matches") {
     html += `<select id="f-category">${catOptions}</select>`;
   }
-  html += `<input type="text" id="f-search" placeholder="Search itemâ¦">`;
+  html += `<input type="text" id="f-search" placeholder="Search item…">`;
   el.innerHTML = html;
 
   document.getElementById("f-store").value = currentFilters.store;
@@ -360,7 +360,7 @@ function renderFilters() {
 async function loadData() {
   const resultsEl = document.getElementById("results");
   const countEl = document.getElementById("count-row");
-  resultsEl.innerHTML = `<div class="loading">Loadingâ¦</div>`;
+  resultsEl.innerHTML = `<div class="loading">Loading…</div>`;
 
   let rows = [];
   let error = null;
@@ -430,9 +430,9 @@ function renderCard(tab, r, showMatch) {
           <span class="deal-item">${esc(r.item)}${r.notable ? '<span class="badge">Notable</span>' : ''}${matchTag}</span>
           <span class="deal-price">${esc(r.price || "")}${r.unit ? " / " + esc(r.unit) : ""}</span>
         </div>
-        <div class="deal-meta">${esc(r.store)} Â· ${esc(r.category)}${r.sale_end ? " Â· through " + esc(r.sale_end) : ""}</div>
+        <div class="deal-meta">${esc(r.store)} · ${esc(r.category)}${r.sale_end ? " · through " + esc(r.sale_end) : ""}</div>
         ${r.notes ? `<div class="deal-notes">${esc(r.notes)}</div>` : ""}
-        ${r.source_url ? `<a class="clip-link" href="${esc(r.source_url)}" target="_blank" rel="noopener">View ad / details â</a>` : ""}
+        ${r.source_url ? `<a class="clip-link" href="${esc(r.source_url)}" target="_blank" rel="noopener">View ad / details →</a>` : ""}
       </div>`;
   }
   if (tab === "want_list") {
@@ -440,11 +440,11 @@ function renderCard(tab, r, showMatch) {
       <div class="deal-card">
         <div class="deal-top">
           <span class="deal-item">${esc(r.item)}</span>
-          <span class="deal-price">${esc(r.best_deal_price || "â")}</span>
+          <span class="deal-price">${esc(r.best_deal_price || "—")}</span>
         </div>
-        <div class="deal-meta">${esc(r.category || "")}${r.priority ? " Â· Priority " + esc(r.priority) : ""}</div>
+        <div class="deal-meta">${esc(r.category || "")}${r.priority ? " · Priority " + esc(r.priority) : ""}</div>
         ${r.best_deal_found ? `<div class="deal-notes"><strong>Best deal:</strong> ${esc(r.best_deal_found)}${r.best_deal_store ? " at " + esc(r.best_deal_store) : ""}</div>` : ""}
-        ${r.deal_source ? `<div class="deal-meta">${esc(r.deal_source)}${r.est_savings ? " Â· Save " + esc(r.est_savings) : ""}</div>` : ""}
+        ${r.deal_source ? `<div class="deal-meta">${esc(r.deal_source)}${r.est_savings ? " · Save " + esc(r.est_savings) : ""}</div>` : ""}
         ${r.where_to_clip ? `<div class="deal-notes">${esc(r.where_to_clip)}</div>` : ""}
       </div>`;
   }
@@ -457,7 +457,7 @@ function renderCard(tab, r, showMatch) {
       </div>
       <div class="deal-meta">${esc(r.store)}</div>
       ${r.description ? `<div class="deal-notes">${esc(r.description)}</div>` : ""}
-      ${r.clip_url ? `<a class="clip-link" href="${esc(r.clip_url)}" target="_blank" rel="noopener">Clip this coupon â</a>` : ""}
+      ${r.clip_url ? `<a class="clip-link" href="${esc(r.clip_url)}" target="_blank" rel="noopener">Clip this coupon →</a>` : ""}
     </div>`;
 }
 
