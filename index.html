@@ -149,6 +149,18 @@
   }
   .deal-card-body { flex: 1 1 auto; min-width: 0; }
   .deal-meta { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .store-logo {
+    height: 18px;
+    width: 18px;
+    object-fit: contain;
+    border-radius: 4px;
+    background: #fff;
+    border: 1px solid var(--border);
+    padding: 1px;
+    vertical-align: middle;
+    margin-right: 2px;
+  }
+  .store-logo-fallback { font-size: 13px; color: var(--muted); }
   .deal-notes { font-size: 13px; margin-top: 6px; color: var(--text); }
   .badge {
     display: inline-block;
@@ -312,6 +324,34 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const STORES = ["WinCo","Stater Bros","Albertsons","Ralphs","Grocery Outlet","Vons","Walmart","Smart & Final","Sprouts Farmers Market","CVS","Walgreens"];
 const CATEGORIES = ["Produce","Meat & Seafood","Dairy & Eggs","Bakery","Frozen","Pantry/Canned & Dry Goods","Beverages","Snacks","Household & Cleaning","Health & Beauty","Baby & Kids","Pet Supplies","Other"];
+const STORE_DOMAINS = {
+  "WinCo": "wincofoods.com",
+  "Stater Bros": "staterbros.com",
+  "Albertsons": "albertsons.com",
+  "Ralphs": "ralphs.com",
+  "Grocery Outlet": "groceryoutlet.com",
+  "Vons": "vons.com",
+  "Walmart": "walmart.com",
+  "Smart & Final": "smartandfinal.com",
+  "Sprouts Farmers Market": "sprouts.com",
+  "CVS": "cvs.com",
+  "Walgreens": "walgreens.com"
+};
+
+function handleLogoError(el) {
+  const span = document.createElement("span");
+  span.textContent = el.dataset.store || "";
+  span.className = "store-logo-fallback";
+  el.replaceWith(span);
+}
+
+function storeLogo(store) {
+  if (!store) return "";
+  const domain = STORE_DOMAINS[store];
+  if (!domain) return `<span class="store-logo-fallback">${esc(store)}</span>`;
+  const url = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+  return `<img class="store-logo" src="${url}" alt="${esc(store)}" title="${esc(store)}" data-store="${esc(store)}" loading="lazy" onerror="handleLogoError(this)">`;
+}
 
 let currentTab = "weekly_deals";
 let currentFilters = { store: "", category: "", q: "" };
@@ -661,7 +701,7 @@ function renderCard(tab, r, showMatch, hideCategory) {
           <span class="deal-item">${esc(r.item)}${r.notable ? '<span class="badge">Notable</span>' : ''}${matchTag}</span>
           <span class="deal-price">${esc(r.price || "")}${r.unit ? " / " + esc(r.unit) : ""}</span>
         </div>
-        <div class="deal-meta">${esc(r.store)} · ${esc(r.category)}${r.sale_end ? " · through " + esc(r.sale_end) : ""}</div>
+        <div class="deal-meta">${storeLogo(r.store)} · ${esc(r.category)}${r.sale_end ? " · through " + esc(r.sale_end) : ""}</div>
         ${r.notes ? `<div class="deal-notes">${esc(r.notes)}</div>` : ""}
         ${r.source_url ? `<a class="clip-link" href="${esc(r.source_url)}" target="_blank" rel="noopener">View ad / details →</a>` : ""}
       </div>`;
@@ -698,7 +738,7 @@ function renderCard(tab, r, showMatch, hideCategory) {
             <span class="deal-item">${esc(r.item || r.description || "Coupon")}${matchTag}</span>
             ${r.savings ? `<span class="deal-price">${esc(r.savings)}</span>` : ""}
           </div>
-          <div class="deal-meta">${esc(r.store)}</div>
+          <div class="deal-meta">${storeLogo(r.store)}</div>
           ${r.description ? `<div class="deal-notes">${esc(r.description)}</div>` : ""}
           ${r.clip_url ? `<a class="clip-link" href="${esc(r.clip_url)}" target="_blank" rel="noopener">Clip this coupon →</a>` : ""}
         </div>
