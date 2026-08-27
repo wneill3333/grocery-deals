@@ -220,6 +220,20 @@
   .btn-small.danger { color: #b3261e; border-color: #f0c9c5; }
   .btn-small.danger:hover { background: #fdf0ef; }
 
+  /* Want list category grouping */
+  .category-header {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--green-dark);
+    margin: 18px 0 8px;
+    padding-bottom: 4px;
+    border-bottom: 2px solid var(--green);
+  }
+  .category-header:first-child { margin-top: 0; }
+  .category-count { font-weight: 400; text-transform: none; color: var(--muted); font-size: 12px; }
+
   #app-screen { display: none; }
 </style>
 </head>
@@ -537,6 +551,7 @@ async function loadData() {
     if (currentFilters.store) q = q.eq("best_deal_store", currentFilters.store);
     if (currentFilters.q) q = q.ilike("item", `%${currentFilters.q}%`);
     ({ data: rows, error } = await q);
+    if (rows) rows = sortWantList(rows);
   } else if (currentTab === "digital_coupons") {
     let q = sb.from("digital_coupons").select("*").order("date_pulled", { ascending: false });
     if (currentFilters.store) q = q.eq("store", currentFilters.store);
@@ -578,7 +593,11 @@ async function loadData() {
     return;
   }
 
-  resultsEl.innerHTML = rows.map(r => renderCard(currentTab === "my_matches" ? r._source : currentTab, r, currentTab === "my_matches")).join("");
+  if (currentTab === "want_list") {
+    resultsEl.innerHTML = renderWantListGrouped(rows);
+  } else {
+    resultsEl.innerHTML = rows.map(r => renderCard(currentTab === "my_matches" ? r._source : currentTab, r, currentTab === "my_matches")).join("");
+  }
 
   if (currentTab === "want_list") {
     resultsEl.querySelectorAll(".edit-want-btn").forEach(btn => {
@@ -593,7 +612,35 @@ async function loadData() {
   }
 }
 
-function renderCard(tab, r, showMatch) {
+const PRIORITY_ORDER = { A: 0, B: 1, C: 2, D: 3 };
+
+function sortWantList(rows) {
+  return rows.slice().sort((a, b) => {
+    const pa = PRIORITY_ORDER[a.priority] ?? 99;
+    const pb = PRIORITY_ORDER[b.priority] ?? 99;
+    if (pa !== pb) return pa - pb;
+    return (a.item || "").localeCompare(b.item || "");
+  });
+}
+
+function renderWantListGrouped(rows) {
+  const groups = new Map();
+  rows.forEach(r => {
+    const cat = r.category || "Uncategorized";
+    if (!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat).push(r);
+  });
+  const known = CATEGORIES.filter(c => groups.has(c));
+  const extra = [...groups.keys()].filter(c => c !== "Uncategorized" && !CATEGORIES.includes(c)).sort();
+  const orderedCats = [...known, ...extra, ...(groups.has("Uncategorized") ? ["Uncategorized"] : [])];
+  return orderedCats.map(cat => {
+    const items = groups.get(cat);
+    return `<div class="category-header">${esc(cat)} <span class="category-count">(${items.length})</span></div>` +
+      items.map(r => renderCard("want_list", r, false, true)).join("");
+  }).join("");
+}
+
+function renderCard(tab, r, showMatch, hideCategory) {
   const matchTag = (showMatch && r.matches_want_list_item)
     ? `<span class="badge match-badge">Matches: ${esc(r.matches_want_list_item)}</span>` : "";
   if (tab === "weekly_deals") {
@@ -609,13 +656,17 @@ function renderCard(tab, r, showMatch) {
       </div>`;
   }
   if (tab === "want_list") {
+    const metaParts = [];
+    if (!hideCategory && r.category) metaParts.push(esc(r.category));
+    if (r.priority) metaParts.push("Priority " + esc(r.priority));
+    const metaLine = metaParts.length ? `<div class="deal-meta">${metaParts.join(" · ")}</div>` : "";
     return `
       <div class="deal-card">
         <div class="deal-top">
           <span class="deal-item">${esc(r.item)}</span>
           <span class="deal-price">${esc(r.best_deal_price || "—")}</span>
         </div>
-        <div class="deal-meta">${esc(r.category || "")}${r.priority ? " · Priority " + esc(r.priority) : ""}</div>
+        ${metaLine}
         ${r.notes ? `<div class="deal-notes">${esc(r.notes)}</div>` : ""}
         ${r.best_deal_found ? `<div class="deal-notes"><strong>Best deal:</strong> ${esc(r.best_deal_found)}${r.best_deal_store ? " at " + esc(r.best_deal_store) : ""}</div>` : ""}
         ${r.deal_source ? `<div class="deal-meta">${esc(r.deal_source)}${r.est_savings ? " · Save " + esc(r.est_savings) : ""}</div>` : ""}
