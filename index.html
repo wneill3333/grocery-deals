@@ -168,6 +168,58 @@
   .loading { text-align: center; color: var(--muted); padding: 30px; font-size: 14px; }
   .count-row { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
 
+  /* Want list add/edit/delete */
+  .add-item-row { margin-bottom: 10px; }
+  .add-item-row button {
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: none;
+    background: var(--green);
+    color: white;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .add-item-row button:hover { background: var(--green-dark); }
+  .want-form {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+  .want-form label { margin: 10px 0 4px; }
+  .want-form .form-row { display: flex; gap: 8px; }
+  .want-form .form-row > div { flex: 1; }
+  .want-form .form-actions { display: flex; gap: 8px; margin-top: 16px; }
+  .want-form .form-actions button {
+    flex: 1;
+    padding: 10px;
+    border-radius: 8px;
+    border: none;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .want-form .btn-save { background: var(--green); color: white; }
+  .want-form .btn-save:hover { background: var(--green-dark); }
+  .want-form .btn-save:disabled { opacity: 0.6; cursor: default; }
+  .want-form .btn-cancel { background: #eee; color: var(--text); }
+  .form-error { color: #b3261e; font-size: 13px; margin-top: 8px; }
+  .card-actions { display: flex; gap: 8px; margin-top: 8px; }
+  .btn-small {
+    padding: 5px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: white;
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .btn-small:hover { background: var(--bg); }
+  .btn-small.danger { color: #b3261e; border-color: #f0c9c5; }
+  .btn-small.danger:hover { background: #fdf0ef; }
+
   #app-screen { display: none; }
 </style>
 </head>
@@ -221,6 +273,7 @@
     </div>
 
     <div class="filters" id="filters"></div>
+    <div id="want-controls"></div>
     <div class="count-row" id="count-row"></div>
     <div id="results" class="card-list"><div class="loading">Loading…</div></div>
   </main>
@@ -322,10 +375,118 @@ function initApp() {
       btn.classList.add("active");
       currentTab = btn.dataset.tab;
       renderFilters();
+      renderWantControls();
       loadData();
     });
   });
   renderFilters();
+  renderWantControls();
+  loadData();
+}
+
+// --- Want list add / edit / delete ---
+let editingWantId = null;
+
+function renderWantControls() {
+  const el = document.getElementById("want-controls");
+  if (currentTab !== "want_list") { el.innerHTML = ""; return; }
+  editingWantId = null;
+  el.innerHTML = `
+    <div class="add-item-row">
+      <button type="button" id="add-item-btn">+ Add item</button>
+    </div>
+    <div class="want-form" id="want-form" style="display:none;">
+      <label for="wf-item">Item</label>
+      <input type="text" id="wf-item" placeholder="e.g. Ground beef">
+      <div class="form-row">
+        <div>
+          <label for="wf-category">Category</label>
+          <select id="wf-category">
+            <option value="">None</option>
+            ${CATEGORIES.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label for="wf-priority">Priority</label>
+          <select id="wf-priority">
+            <option value="">None</option>
+            <option value="A">A (highest)</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+            <option value="D">D (lowest)</option>
+          </select>
+        </div>
+      </div>
+      <label for="wf-notes">Notes</label>
+      <input type="text" id="wf-notes" placeholder="optional">
+      <div class="form-actions">
+        <button type="button" class="btn-cancel" id="wf-cancel">Cancel</button>
+        <button type="button" class="btn-save" id="wf-save">Save</button>
+      </div>
+      <div class="form-error" id="wf-error"></div>
+    </div>
+  `;
+  document.getElementById("add-item-btn").addEventListener("click", () => openWantForm(null));
+  document.getElementById("wf-cancel").addEventListener("click", closeWantForm);
+  document.getElementById("wf-save").addEventListener("click", saveWantItem);
+}
+
+function openWantForm(row) {
+  editingWantId = row ? row.id : null;
+  document.getElementById("want-form").style.display = "block";
+  document.getElementById("wf-item").value = row ? (row.item || "") : "";
+  document.getElementById("wf-category").value = row ? (row.category || "") : "";
+  document.getElementById("wf-priority").value = row ? (row.priority || "") : "";
+  document.getElementById("wf-notes").value = row ? (row.notes || "") : "";
+  document.getElementById("wf-error").textContent = "";
+  document.getElementById("wf-item").focus();
+  document.getElementById("want-form").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function closeWantForm() {
+  editingWantId = null;
+  const form = document.getElementById("want-form");
+  if (form) {
+    form.style.display = "none";
+    document.getElementById("wf-error").textContent = "";
+  }
+}
+
+async function saveWantItem() {
+  const item = document.getElementById("wf-item").value.trim();
+  const category = document.getElementById("wf-category").value || null;
+  const priority = document.getElementById("wf-priority").value || null;
+  const notes = document.getElementById("wf-notes").value.trim() || null;
+  const errEl = document.getElementById("wf-error");
+  errEl.textContent = "";
+  if (!item) { errEl.textContent = "Item name is required."; return; }
+
+  const saveBtn = document.getElementById("wf-save");
+  saveBtn.disabled = true;
+  saveBtn.textContent = "Saving…";
+
+  let error;
+  if (editingWantId) {
+    ({ error } = await sb.from("want_list").update({ item, category, priority, notes }).eq("id", editingWantId));
+  } else {
+    const { data: userData } = await sb.auth.getUser();
+    const addedBy = (userData && userData.user && userData.user.email) ? userData.user.email.split("@")[0] : null;
+    const today = new Date().toISOString().slice(0, 10);
+    ({ error } = await sb.from("want_list").insert({ item, category, priority, notes, added_by: addedBy, date_added: today }));
+  }
+
+  saveBtn.disabled = false;
+  saveBtn.textContent = "Save";
+
+  if (error) { errEl.textContent = error.message; return; }
+  closeWantForm();
+  loadData();
+}
+
+async function deleteWantItem(id, itemName) {
+  if (!confirm(`Remove "${itemName}" from your want list?`)) return;
+  const { error } = await sb.from("want_list").delete().eq("id", id);
+  if (error) { alert("Couldn't delete: " + error.message); return; }
   loadData();
 }
 
@@ -418,6 +579,18 @@ async function loadData() {
   }
 
   resultsEl.innerHTML = rows.map(r => renderCard(currentTab === "my_matches" ? r._source : currentTab, r, currentTab === "my_matches")).join("");
+
+  if (currentTab === "want_list") {
+    resultsEl.querySelectorAll(".edit-want-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const row = rows.find(r => String(r.id) === btn.dataset.id);
+        if (row) openWantForm(row);
+      });
+    });
+    resultsEl.querySelectorAll(".delete-want-btn").forEach(btn => {
+      btn.addEventListener("click", () => deleteWantItem(btn.dataset.id, btn.dataset.item));
+    });
+  }
 }
 
 function renderCard(tab, r, showMatch) {
@@ -443,9 +616,14 @@ function renderCard(tab, r, showMatch) {
           <span class="deal-price">${esc(r.best_deal_price || "—")}</span>
         </div>
         <div class="deal-meta">${esc(r.category || "")}${r.priority ? " · Priority " + esc(r.priority) : ""}</div>
+        ${r.notes ? `<div class="deal-notes">${esc(r.notes)}</div>` : ""}
         ${r.best_deal_found ? `<div class="deal-notes"><strong>Best deal:</strong> ${esc(r.best_deal_found)}${r.best_deal_store ? " at " + esc(r.best_deal_store) : ""}</div>` : ""}
         ${r.deal_source ? `<div class="deal-meta">${esc(r.deal_source)}${r.est_savings ? " · Save " + esc(r.est_savings) : ""}</div>` : ""}
         ${r.where_to_clip ? `<div class="deal-notes">${esc(r.where_to_clip)}</div>` : ""}
+        <div class="card-actions">
+          <button type="button" class="btn-small edit-want-btn" data-id="${esc(r.id)}">Edit</button>
+          <button type="button" class="btn-small danger delete-want-btn" data-id="${esc(r.id)}" data-item="${esc(r.item)}">Delete</button>
+        </div>
       </div>`;
   }
   // digital_coupons
