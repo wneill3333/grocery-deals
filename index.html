@@ -348,38 +348,33 @@ function handleLogoError(el) {
 // Cards reuse only 11 distinct store logo URLs across hundreds of rows.
 // Rendering 300+ <img> tags that all point at the same handful of URLs
 // causes many of those duplicate-URL requests to hang indefinitely in
-// some browsers. Fetching each of the 11 icons once up front and caching
-// them as data URLs sidesteps that entirely: every card then renders an
-// already-resolved, network-free <img src="data:...">.
-const STORE_LOGO_CACHE = {};
+// some browsers. (An earlier attempt to fix this by fetch()-ing each icon
+// once and embedding it as a data URL didn't work: Google's favicon
+// endpoint doesn't send CORS headers, so fetch()'s response body can't be
+// read at all, even though the exact same URL displays fine in an <img>.)
+// The fix instead warms the browser's own HTTP cache: load each of the 11
+// icons once via a standalone Image(), and only start rendering cards once
+// every one of those has settled (loaded, errored, or timed out). By the
+// time the 300+ card <img> tags request those same URLs, the browser can
+// serve them straight from cache instead of racing duplicate network
+// requests.
 const logoPreloadPromise = (async function preloadStoreLogos() {
   const domains = [...new Set(Object.values(STORE_DOMAINS))];
-  await Promise.all(domains.map(async (domain) => {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      const res = await fetch(`https://www.google.com/s2/favicons?domain=${domain}&sz=64`, { signal: controller.signal });
-      clearTimeout(timeout);
-      if (!res.ok) return;
-      const blob = await res.blob();
-      const dataUrl = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-      STORE_LOGO_CACHE[domain] = dataUrl;
-    } catch (e) {
-      // leave uncached; storeLogo() falls back to the live URL for this domain
-    }
-  }));
+  await Promise.all(domains.map((domain) => new Promise((resolve) => {
+    const img = new Image();
+    const done = () => resolve();
+    img.onload = done;
+    img.onerror = done; // don't let one bad domain block the rest forever
+    setTimeout(done, 4000); // safety net in case neither event fires
+    img.src = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+  })));
 })();
 
 function storeLogo(store) {
   if (!store) return "";
   const domain = STORE_DOMAINS[store];
   if (!domain) return `<span class="store-logo-fallback">${esc(store)}</span>`;
-  const url = STORE_LOGO_CACHE[domain] || `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+  const url = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
   return `<img class="store-logo" src="${url}" alt="${esc(store)}" title="${esc(store)}" data-store="${esc(store)}" onerror="handleLogoError(this)">`;
 }
 
