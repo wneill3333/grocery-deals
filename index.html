@@ -245,6 +245,21 @@
   .btn-small:hover { background: var(--bg); }
   .btn-small.danger { color: #b3261e; border-color: #f0c9c5; }
   .btn-small.danger:hover { background: #fdf0ef; }
+  .btn-small.got-it-btn { color: var(--green-dark); border-color: var(--green); font-weight: 600; }
+  .btn-small.got-it-btn:hover { background: var(--notable, #eef7ee); }
+
+  /* Buy checkbox */
+  .buy-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 13px;
+    color: var(--text);
+    margin-top: 8px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .buy-check input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
 
   /* Want list category grouping */
   .category-header {
@@ -310,6 +325,7 @@
       <button class="tab-btn" data-tab="want_list">Want List</button>
       <button class="tab-btn" data-tab="digital_coupons">Digital Coupons</button>
       <button class="tab-btn" data-tab="my_matches">For My Want List</button>
+      <button class="tab-btn" data-tab="shopping_list">Shopping List</button>
     </div>
 
     <div class="filters" id="filters"></div>
@@ -475,6 +491,38 @@ function initApp() {
   renderFilters();
   renderWantControls();
   loadData();
+
+  const resultsEl = document.getElementById("results");
+  resultsEl.addEventListener("change", async (e) => {
+    const cb = e.target.closest(".buy-checkbox");
+    if (!cb) return;
+    const table = cb.dataset.table;
+    const id = cb.dataset.id;
+    const checked = cb.checked;
+    cb.disabled = true;
+    const { error } = await sb.from(table).update({ intending_to_buy: checked }).eq("id", id);
+    cb.disabled = false;
+    if (error) {
+      alert("Couldn't update: " + error.message);
+      cb.checked = !checked;
+    }
+  });
+  resultsEl.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".got-it-btn");
+    if (!btn) return;
+    const table = btn.dataset.table;
+    const id = btn.dataset.id;
+    btn.disabled = true;
+    btn.textContent = "…";
+    const { error } = await sb.from(table).update({ intending_to_buy: false }).eq("id", id);
+    if (error) {
+      alert("Couldn't update: " + error.message);
+      btn.disabled = false;
+      btn.textContent = "✓ Got it";
+      return;
+    }
+    loadData();
+  });
 }
 
 // --- Want list add / edit / delete ---
@@ -589,7 +637,7 @@ function renderFilters() {
   const catOptions = `<option value="">All categories</option>` + CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join("");
 
   let html = `<select id="f-store">${storeOptions}</select>`;
-  if (currentTab !== "want_list" && currentTab !== "my_matches") {
+  if (currentTab !== "want_list" && currentTab !== "my_matches" && currentTab !== "shopping_list") {
     html += `<select id="f-category">${catOptions}</select>`;
   }
   html += `<input type="text" id="f-search" placeholder="Search item…">`;
@@ -655,6 +703,20 @@ async function loadData() {
         return (a._source === "digital_coupons" ? 0 : 1) - (b._source === "digital_coupons" ? 0 : 1);
       });
     }
+  } else if (currentTab === "shopping_list") {
+    // Everything currently checked "Buy" across Weekly Deals and Digital Coupons, shared by whoever's logged in.
+    let wq = sb.from("weekly_deals").select("*").eq("intending_to_buy", true);
+    let cq = sb.from("digital_coupons").select("*").eq("intending_to_buy", true);
+    if (currentFilters.store) { wq = wq.eq("store", currentFilters.store); cq = cq.eq("store", currentFilters.store); }
+    if (currentFilters.q) { wq = wq.ilike("item", `%${currentFilters.q}%`); cq = cq.ilike("item", `%${currentFilters.q}%`); }
+    const [wRes, cRes] = await Promise.all([wq, cq]);
+    if (wRes.error) error = wRes.error;
+    else if (cRes.error) error = cRes.error;
+    else {
+      const weeklyRows = (wRes.data || []).map(r => ({ ...r, _source: "weekly_deals" }));
+      const couponRows = (cRes.data || []).map(r => ({ ...r, _source: "digital_coupons" }));
+      rows = weeklyRows.concat(couponRows);
+    }
   }
 
   if (error) {
@@ -668,6 +730,8 @@ async function loadData() {
   if (!rows.length) {
     const emptyMsg = currentTab === "my_matches"
       ? "No coupons or deals matched to your Want List yet. Check back after the next scheduled pull."
+      : currentTab === "shopping_list"
+      ? `Nothing checked off yet. Check the "Buy" box on any Weekly Deal or Digital Coupon and it'll show up here, grouped by store.`
       : "No matching results yet. Try a different filter, or check back after the next scheduled pull.";
     resultsEl.innerHTML = `<div class="empty-state">${emptyMsg}</div>`;
     return;
@@ -675,6 +739,8 @@ async function loadData() {
 
   if (currentTab === "want_list") {
     resultsEl.innerHTML = renderWantListGrouped(rows);
+  } else if (currentTab === "shopping_list") {
+    resultsEl.innerHTML = renderShoppingListGrouped(rows);
   } else {
     resultsEl.innerHTML = rows.map(r => renderCard(currentTab === "my_matches" ? r._source : currentTab, r, currentTab === "my_matches")).join("");
   }
@@ -720,7 +786,29 @@ function renderWantListGrouped(rows) {
   }).join("");
 }
 
-function renderCard(tab, r, showMatch, hideCategory) {
+function renderShoppingListGrouped(rows) {
+  const groups = new Map();
+  rows.forEach(r => {
+    const store = r.store || "Other";
+    if (!groups.has(store)) groups.set(store, []);
+    groups.get(store).push(r);
+  });
+  const storeNames = [...groups.keys()].sort((a, b) => a.localeCompare(b));
+  return storeNames.map(store => {
+    const items = groups.get(store);
+    return `<div class="category-header">${storeLogo(store)} <span class="category-count">(${items.length})</span></div>` +
+      items.map(r => renderCard(r._source, r, false, false, "gotit")).join("");
+  }).join("");
+}
+
+function buyControl(tab, r, buyMode) {
+  if (buyMode === "gotit") {
+    return `<button type="button" class="btn-small got-it-btn" data-table="${esc(tab)}" data-id="${esc(r.id)}">✓ Got it</button>`;
+  }
+  return `<label class="buy-check"><input type="checkbox" class="buy-checkbox" data-table="${esc(tab)}" data-id="${esc(r.id)}" ${r.intending_to_buy ? "checked" : ""}> Intend to buy</label>`;
+}
+
+function renderCard(tab, r, showMatch, hideCategory, buyMode) {
   const matchTag = (showMatch && r.matches_want_list_item)
     ? `<span class="badge match-badge">Matches: ${esc(r.matches_want_list_item)}</span>` : "";
   if (tab === "weekly_deals") {
@@ -733,6 +821,7 @@ function renderCard(tab, r, showMatch, hideCategory) {
         <div class="deal-meta">${storeLogo(r.store)} · ${esc(r.category)}${r.sale_end ? " · through " + esc(r.sale_end) : ""}</div>
         ${r.notes ? `<div class="deal-notes">${esc(r.notes)}</div>` : ""}
         ${r.source_url ? `<a class="clip-link" href="${esc(r.source_url)}" target="_blank" rel="noopener">View ad / details →</a>` : ""}
+        ${buyControl(tab, r, buyMode)}
       </div>`;
   }
   if (tab === "want_list") {
@@ -770,6 +859,7 @@ function renderCard(tab, r, showMatch, hideCategory) {
           <div class="deal-meta">${storeLogo(r.store)}</div>
           ${r.description ? `<div class="deal-notes">${esc(r.description)}</div>` : ""}
           ${r.clip_url ? `<a class="clip-link" href="${esc(r.clip_url)}" target="_blank" rel="noopener">Clip this coupon →</a>` : ""}
+          ${buyControl(tab, r, buyMode)}
         </div>
       </div>
     </div>`;
