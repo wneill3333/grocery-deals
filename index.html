@@ -6,6 +6,9 @@
 <meta name="theme-color" content="#1b6e3c">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Grocery Deals">
 <title>North County Grocery Deals</title>
 <style>
   :root {
@@ -741,6 +744,30 @@ function findMatch(matchers, text) {
   return m ? m.item : null;
 }
 
+function priceNum(v) {
+  const m = String(v || "").match(/\$\s?(\d+(?:\.\d{1,2})?)/);
+  return m ? parseFloat(m[1]) : null;
+}
+
+// For every Want List item, find what is on sale for it RIGHT NOW and pick a best:
+// cheapest weekly-ad price if any has a readable price, else the biggest coupon saving.
+function attachLiveBest(wantRows, weekly, coupons) {
+  return (wantRows || []).map(w => {
+    const m = wantMatchers([w])[0];
+    if (!m) return Object.assign({}, w, { _deals: [], _best: null });
+    const hit = r => m.re.test(r.item || "") || m.re.test(r.description || "");
+    const deals = (weekly || []).filter(hit).map(r => Object.assign({}, r, { _source: "weekly_deals" }))
+      .concat((coupons || []).filter(hit).map(r => Object.assign({}, r, { _source: "digital_coupons" })));
+    let best = null;
+    const priced = deals.filter(d => priceNum(d.price) !== null);
+    const saved = deals.filter(d => priceNum(d.savings) !== null);
+    if (priced.length) best = priced.reduce((a, b) => priceNum(b.price) < priceNum(a.price) ? b : a);
+    else if (saved.length) best = saved.reduce((a, b) => priceNum(b.savings) > priceNum(a.savings) ? b : a);
+    else best = deals[0] || null;
+    return Object.assign({}, w, { _deals: deals, _best: best });
+  });
+}
+
 function activateTab(tab) {
   if (TAB_NAMES.indexOf(tab) < 0) return;
   currentTab = tab;
@@ -819,14 +846,23 @@ async function loadData() {
     };
     ({ data: rows, error } = await fetchAll(mk));
   } else if (currentTab === "want_list") {
-    const mk = () => {
-      let q = sb.from("want_list").select("*").order("item", { ascending: true });
-      if (currentFilters.store) q = q.eq("best_deal_store", currentFilters.store);
-      if (currentFilters.q) q = q.ilike("item", `%${currentFilters.q}%`);
-      return q;
-    };
-    ({ data: rows, error } = await fetchAll(mk));
-    if (rows) rows = sortWantList(rows);
+    // The best_deal_* columns came from the retired Google Sheet and nothing fills them
+    // any more, so the best deal is computed live from what is currently on sale.
+    const [wantRes, wRes, cRes] = await Promise.all([
+      fetchAll(() => sb.from("want_list").select("*").order("item", { ascending: true })),
+      fetchAll(() => sb.from("weekly_deals").select("*").or("sale_end.gte." + todayISO() + ",sale_end.is.null").order("id", { ascending: true })),
+      fetchAll(() => sb.from("digital_coupons").select("*").or("expires_on.gte." + todayISO() + ",expires_on.is.null").order("id", { ascending: true }))
+    ]);
+    error = wantRes.error || wRes.error || cRes.error || null;
+    if (!error) {
+      rows = attachLiveBest(wantRes.data, wRes.data, cRes.data);
+      if (currentFilters.store) rows = rows.filter(r => (r._deals || []).some(d => d.store === currentFilters.store));
+      if (currentFilters.q) {
+        const needle = currentFilters.q.toLowerCase();
+        rows = rows.filter(r => (r.item || "").toLowerCase().indexOf(needle) >= 0);
+      }
+      rows = sortWantList(rows);
+    }
   } else if (currentTab === "digital_coupons") {
     const mk = () => {
       let q = sb.from("digital_coupons").select("*").order("date_pulled", { ascending: false });
@@ -937,6 +973,16 @@ async function loadData() {
     resultsEl.querySelectorAll(".delete-want-btn").forEach(btn => {
       btn.addEventListener("click", () => deleteWantItem(btn.dataset.id, btn.dataset.item));
     });
+    resultsEl.querySelectorAll(".see-matches-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        currentFilters.q = btn.dataset.item;
+        activateTab("my_matches");
+        updateHash();
+        renderFilters();
+        renderWantControls();
+        loadData();
+      });
+    });
   }
 }
 
@@ -1017,6 +1063,14 @@ function renderCard(tab, r, showMatch, hideCategory, buyMode) {
       </div>`;
   }
   if (tab === "want_list") {
+    const best = r._best;
+    const bestPrice = best ? (best.price || best.savings || "on sale") : (r.best_deal_price || "—");
+    const n = (r._deals || []).length;
+    const liveLine = n
+      ? `<div class="deal-notes"><strong>Best now:</strong> ${esc(best.item)}${best.store ? " at " + esc(best.store) : ""}` +
+        `${best.unit ? " / " + esc(best.unit) : ""}</div>` +
+        `<div class="deal-meta"><button type="button" class="btn-small see-matches-btn" data-item="${esc(r.item)}">See all ${n} match${n === 1 ? "" : "es"} →</button></div>`
+      : `<div class="deal-meta">Nothing on sale matches this right now.</div>`;
     const metaParts = [];
     if (!hideCategory && r.category) metaParts.push(esc(r.category));
     if (r.priority) metaParts.push("Priority " + esc(r.priority));
@@ -1025,9 +1079,10 @@ function renderCard(tab, r, showMatch, hideCategory, buyMode) {
       <div class="deal-card">
         <div class="deal-top">
           <span class="deal-item">${esc(r.item)}</span>
-          <span class="deal-price">${esc(r.best_deal_price || "—")}</span>
+          <span class="deal-price">${esc(bestPrice)}</span>
         </div>
         ${metaLine}
+        ${liveLine}
         ${r.notes ? `<div class="deal-notes">${esc(r.notes)}</div>` : ""}
         ${r.best_deal_found ? `<div class="deal-notes"><strong>Best deal:</strong> ${esc(r.best_deal_found)}${r.best_deal_store ? " at " + esc(r.best_deal_store) : ""}</div>` : ""}
         ${r.deal_source ? `<div class="deal-meta">${esc(r.deal_source)}${r.est_savings ? " · Save " + esc(r.est_savings) : ""}</div>` : ""}
