@@ -188,6 +188,30 @@ iframe): on the store's circular page, run `location.href = <the big iframe>.src
 Smart & Final that lands on the Red Pepper viewer directly, where the publication list and
 page navigation are reachable.
 
+### PROVEN 2026-08-28: reading the flyer images works, and works well
+
+Screenshots of the flyer are entirely legible — product names, prices, unit, limits and
+validity dates all read cleanly at normal viewport size. A single page of the Smart & Final
+ad yielded 21 items in about ten minutes, 16 of which were new to the database.
+
+The procedure that works:
+
+1. Open the store's circular page, then escape the cross-origin iframe with
+   `location.href = <the big iframe>.src`.
+2. **Navigate pages with the viewer's own next/previous chevrons, NOT by editing the page
+   number in the URL.** A direct URL load of page 2 renders a blank white page; clicking
+   the chevron loads it properly. (The chevrons sit either side of the page-number box in
+   the toolbar.)
+3. Screenshot, then scroll ~8 ticks and screenshot again. Three captures covers a page.
+4. Expect some pages to be brand/marketing spreads with no items — Smart & Final's page 2
+   is a full-page "First Street" advert. Skim and move on rather than scrolling it.
+5. Insert the rows with plain SQL. Ad volumes are small (tens of rows, not thousands), so
+   the browser-side relay used for coupons is unnecessary — `insert ... on conflict
+   (dedup_key) do nothing` from the Supabase tools is simpler and safer.
+
+Watch for: `Page.captureScreenshot` occasionally times out right after a page change —
+just retry the screenshot.
+
 **So weekly ads are a READING task, not a scraping task.** That is why `weekly_deals` only
 ever had ~34 rows per store, and why several rows carry hand-written judgements like
 "genuine seasonal low". Budget accordingly:
