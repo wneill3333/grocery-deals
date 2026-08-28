@@ -171,7 +171,41 @@ the redaction.
 
 ---
 
-## Weekly ads (best effort, time permitting)
+## Weekly ads — these are IMAGE FLYERS, not scrapable pages (established 2026-08-28)
+
+**Do not try to write a DOM extractor for weekly ads. There is nothing to extract.** Two
+independent stores were investigated in depth and both serve their ad as page *images*:
+
+- **Smart & Final** embeds a third-party viewer (`app.redpepper.digital`) in a
+  cross-origin iframe. The flyer is 3 pages of images; the page's own `innerText` is 47
+  characters ("Catalogue Page Home Preview Search / 3 Download"). There is a keyword
+  search box, which implies an item index exists behind their API, but reaching it means
+  reverse-engineering a vendor API that will change without warning. Not worth it.
+- **Vons** returns *no text content at all* — the ad is images/canvas.
+
+Useful trick if you do need the flyer as a top-level page (it escapes the cross-origin
+iframe): on the store's circular page, run `location.href = <the big iframe>.src`. For
+Smart & Final that lands on the Red Pepper viewer directly, where the publication list and
+page navigation are reachable.
+
+**So weekly ads are a READING task, not a scraping task.** That is why `weekly_deals` only
+ever had ~34 rows per store, and why several rows carry hand-written judgements like
+"genuine seasonal low". Budget accordingly:
+
+- Give each store ~4 minutes, look at the ad pages, and record the items that are clearly
+  legible and clearly good. Partial, honest coverage is the goal — the review said so
+  explicitly.
+- **Prioritise stores by what is on the Want List.** Reading every page of eleven flyers
+  is not affordable; finding chicken, milk, eggs, sausage, potatoes, onions, bagels,
+  brisket, butt roast and garlic is. Those ten items are what the app actually surfaces.
+- Fill `price`, `unit`, `sale_start`, `sale_end` whenever they are legible; the app's
+  "Best now" picker and its per-store totals both depend on a parseable price, and a row
+  without one is much less useful.
+- `notable` stays rare: a true BOGO, a stated ~40%+ discount, or a clearly below-normal
+  price. The legacy rows are 30% notable, which is three times the intended rate — do not
+  imitate them.
+
+Store ad pages:
 
 | Store | Weekly ad |
 |---|---|
@@ -189,10 +223,9 @@ the redaction.
 
 `weekly_deals` rows carry `store, category, item, price, unit, sale_start, sale_end,
 notable, notes, source='Weekly Ad', source_url, date_pulled`, upserted on `dedup_key` the
-same way. Categories: Produce, Meat & Seafood, Dairy & Eggs, Bakery, Frozen,
+same way as coupons. Categories: Produce, Meat & Seafood, Dairy & Eggs, Bakery, Frozen,
 Pantry/Canned & Dry Goods, Beverages, Snacks, Household & Cleaning, Health & Beauty,
-Baby & Kids, Pet Supplies, Other. Mark `notable` only for a true BOGO, a stated ~40%+
-discount, or a clearly below-normal price — aim for 10–15% of rows.
+Baby & Kids, Pet Supplies, Other.
 
 ## Cleanup at the end of every run
 
