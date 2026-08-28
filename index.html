@@ -662,6 +662,23 @@ async function deleteWantItem(id, itemName) {
   loadData();
 }
 
+// Supabase caps every request at 1000 rows, so anything that can exceed that has to
+// be paged. Pass a function that builds a FRESH query each call - a builder can only
+// be awaited once.
+async function fetchAll(makeQuery) {
+  const PAGE = 1000;
+  let out = [], from = 0;
+  for (;;) {
+    const { data, error } = await makeQuery().range(from, from + PAGE - 1);
+    if (error) return { data: null, error };
+    out = out.concat(data || []);
+    if (!data || data.length < PAGE) break;
+    from += PAGE;
+    if (from > 50000) break;
+  }
+  return { data: out, error: null };
+}
+
 function todayISO() {
   const d = new Date();
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
@@ -790,35 +807,51 @@ async function loadData() {
   let error = null;
 
   if (currentTab === "weekly_deals") {
-    let q = sb.from("weekly_deals").select("*").order("notable", { ascending: false }).order("date_pulled", { ascending: false });
-    if (currentFilters.store) q = q.eq("store", currentFilters.store);
-    if (currentFilters.category) q = q.eq("category", currentFilters.category);
-    if (currentFilters.q) q = q.ilike("item", `%${currentFilters.q}%`);
-    if (!currentFilters.showExpired) q = q.or("sale_end.gte." + todayISO() + ",sale_end.is.null");
-    ({ data: rows, error } = await q);
+    const mk = () => {
+      let q = sb.from("weekly_deals").select("*").order("notable", { ascending: false }).order("date_pulled", { ascending: false });
+      if (currentFilters.store) q = q.eq("store", currentFilters.store);
+      if (currentFilters.category) q = q.eq("category", currentFilters.category);
+      if (currentFilters.q) q = q.ilike("item", `%${currentFilters.q}%`);
+      if (!currentFilters.showExpired) q = q.or("sale_end.gte." + todayISO() + ",sale_end.is.null");
+      return q;
+    };
+    ({ data: rows, error } = await fetchAll(mk));
   } else if (currentTab === "want_list") {
-    let q = sb.from("want_list").select("*").order("item", { ascending: true });
-    if (currentFilters.store) q = q.eq("best_deal_store", currentFilters.store);
-    if (currentFilters.q) q = q.ilike("item", `%${currentFilters.q}%`);
-    ({ data: rows, error } = await q);
+    const mk = () => {
+      let q = sb.from("want_list").select("*").order("item", { ascending: true });
+      if (currentFilters.store) q = q.eq("best_deal_store", currentFilters.store);
+      if (currentFilters.q) q = q.ilike("item", `%${currentFilters.q}%`);
+      return q;
+    };
+    ({ data: rows, error } = await fetchAll(mk));
     if (rows) rows = sortWantList(rows);
   } else if (currentTab === "digital_coupons") {
-    let q = sb.from("digital_coupons").select("*").order("date_pulled", { ascending: false });
-    if (currentFilters.store) q = q.eq("store", currentFilters.store);
-    if (currentFilters.q) q = q.ilike("item", `%${currentFilters.q}%`);
-    if (!currentFilters.showExpired) q = q.or("expires_on.gte." + todayISO() + ",expires_on.is.null");
-    ({ data: rows, error } = await q);
+    const mk = () => {
+      let q = sb.from("digital_coupons").select("*").order("date_pulled", { ascending: false });
+      if (currentFilters.store) q = q.eq("store", currentFilters.store);
+      if (currentFilters.q) q = q.ilike("item", `%${currentFilters.q}%`);
+      if (!currentFilters.showExpired) q = q.or("expires_on.gte." + todayISO() + ",expires_on.is.null");
+      return q;
+    };
+    ({ data: rows, error } = await fetchAll(mk));
   } else if (currentTab === "my_matches") {
     // Matched live against the CURRENT want list, so an item added a minute ago shows
     // its matches right away instead of waiting for the next scheduled pull.
-    let wq = sb.from("weekly_deals").select("*");
-    let cq = sb.from("digital_coupons").select("*");
-    if (currentFilters.store) { wq = wq.eq("store", currentFilters.store); cq = cq.eq("store", currentFilters.store); }
-    if (!currentFilters.showExpired) {
-      wq = wq.or("sale_end.gte." + todayISO() + ",sale_end.is.null");
-      cq = cq.or("expires_on.gte." + todayISO() + ",expires_on.is.null");
-    }
-    const [wantRes, wRes, cRes] = await Promise.all([sb.from("want_list").select("id,item"), wq, cq]);
+    const mkW = () => {
+      let q = sb.from("weekly_deals").select("*").order("id", { ascending: true });
+      if (currentFilters.store) q = q.eq("store", currentFilters.store);
+      if (!currentFilters.showExpired) q = q.or("sale_end.gte." + todayISO() + ",sale_end.is.null");
+      return q;
+    };
+    const mkC = () => {
+      let q = sb.from("digital_coupons").select("*").order("id", { ascending: true });
+      if (currentFilters.store) q = q.eq("store", currentFilters.store);
+      if (!currentFilters.showExpired) q = q.or("expires_on.gte." + todayISO() + ",expires_on.is.null");
+      return q;
+    };
+    const [wantRes, wRes, cRes] = await Promise.all([
+      fetchAll(() => sb.from("want_list").select("id,item").order("id", { ascending: true })),
+      fetchAll(mkW), fetchAll(mkC)]);
     error = wantRes.error || wRes.error || cRes.error || null;
     if (!error) {
       const matchers = wantMatchers(wantRes.data);
@@ -842,11 +875,19 @@ async function loadData() {
     }
   } else if (currentTab === "shopping_list") {
     // Everything currently checked "Buy" across Weekly Deals and Digital Coupons, shared by whoever's logged in.
-    let wq = sb.from("weekly_deals").select("*").eq("intending_to_buy", true);
-    let cq = sb.from("digital_coupons").select("*").eq("intending_to_buy", true);
-    if (currentFilters.store) { wq = wq.eq("store", currentFilters.store); cq = cq.eq("store", currentFilters.store); }
-    if (currentFilters.q) { wq = wq.ilike("item", `%${currentFilters.q}%`); cq = cq.ilike("item", `%${currentFilters.q}%`); }
-    const [wRes, cRes] = await Promise.all([wq, cq]);
+    const mkW = () => {
+      let q = sb.from("weekly_deals").select("*").eq("intending_to_buy", true).order("id", { ascending: true });
+      if (currentFilters.store) q = q.eq("store", currentFilters.store);
+      if (currentFilters.q) q = q.ilike("item", `%${currentFilters.q}%`);
+      return q;
+    };
+    const mkC = () => {
+      let q = sb.from("digital_coupons").select("*").eq("intending_to_buy", true).order("id", { ascending: true });
+      if (currentFilters.store) q = q.eq("store", currentFilters.store);
+      if (currentFilters.q) q = q.ilike("item", `%${currentFilters.q}%`);
+      return q;
+    };
+    const [wRes, cRes] = await Promise.all([fetchAll(mkW), fetchAll(mkC)]);
     if (wRes.error) error = wRes.error;
     else if (cRes.error) error = cRes.error;
     else {
