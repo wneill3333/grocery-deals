@@ -745,7 +745,10 @@ function findMatch(matchers, text) {
 }
 
 function priceNum(v) {
-  const m = String(v || "").match(/\$\s?(\d+(?:\.\d{1,2})?)/);
+  // Weekly-ad prices are stored inconsistently: "$7.99 per lb.", "2.99", "0.99".
+  // Requiring a dollar sign silently ignored the cheapest ones, so the "best" pick
+  // was wrong (chicken showed $7.99 when $0.89 was on the shelf).
+  const m = String(v || "").match(/\$?\s?(\d+(?:\.\d{1,2})?)/);
   return m ? parseFloat(m[1]) : null;
 }
 
