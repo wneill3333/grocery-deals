@@ -284,6 +284,7 @@
   .error-banner { background:#fdecea; border:1px solid #f5c2bd; color:#b3261e; border-radius:8px; padding:10px 34px 10px 12px; margin:10px 0; font-size:14px; position:relative; }
   .error-banner .dismiss { position:absolute; right:6px; top:4px; border:none; background:none; color:#b3261e; font-size:20px; line-height:1; cursor:pointer; padding:2px 6px; }
   .badge.expired-badge { background:#b26a00; }
+  .badge.soon-badge { background:#8a6d1f; }
   .buy-check.clip-check { margin-left:14px; }
   .tab-btn .category-count { margin-left:4px; }
   .added-by { color: var(--muted); }
@@ -744,6 +745,25 @@ function findMatch(matchers, text) {
   return m ? m.item : null;
 }
 
+// "ends today" / "ends Sat" / "expired" on any card whose deal is within a week of
+// running out. Soonest-expiring surfaces first on the Shopping List.
+function dealEnds(tab, r) {
+  return (tab === "weekly_deals" ? r.sale_end : r.expires_on) || null;
+}
+
+function expiryChip(tab, r) {
+  const d = dealEnds(tab, r);
+  if (!d) return "";
+  const today = todayISO();
+  if (d < today) return `<span class="badge expired-badge">expired</span>`;
+  const days = Math.round((new Date(d + "T00:00:00") - new Date(today + "T00:00:00")) / 86400000);
+  if (days > 7) return "";
+  const label = days === 0 ? "ends today"
+    : days === 1 ? "ends tomorrow"
+    : "ends " + new Date(d + "T00:00:00").toLocaleDateString(undefined, { weekday: "short" });
+  return `<span class="badge soon-badge">${label}</span>`;
+}
+
 function priceNum(v) {
   // Weekly-ad prices are stored inconsistently: "$7.99 per lb.", "2.99", "0.99".
   // Requiring a dollar sign silently ignored the cheapest ones, so the "best" pick
@@ -935,7 +955,13 @@ async function loadData() {
       const weeklyRows = (wRes.data || []).map(r => ({ ...r, _source: "weekly_deals" }));
       const couponRows = (cRes.data || []).map(r => ({ ...r, _source: "digital_coupons" }));
       rows = weeklyRows.concat(couponRows);
-      rows.sort((a, b) => (a.clipped ? 1 : 0) - (b.clipped ? 1 : 0));
+      rows.sort((a, b) => {
+        const byClipped = (a.clipped ? 1 : 0) - (b.clipped ? 1 : 0);
+        if (byClipped !== 0) return byClipped;
+        const ea = dealEnds(a._source, a) || "9999-12-31";
+        const eb = dealEnds(b._source, b) || "9999-12-31";
+        return ea.localeCompare(eb);
+      });
     }
   }
 
@@ -1027,7 +1053,12 @@ function renderShoppingListGrouped(rows) {
   const storeNames = [...groups.keys()].sort((a, b) => a.localeCompare(b));
   return storeNames.map(store => {
     const items = groups.get(store);
-    return `<div class="category-header">${storeLogo(store)} <span class="category-count">(${items.length})</span></div>` +
+    const priced = items.filter(r => priceNum(r.price) !== null);
+    const total = priced.reduce((sum, r) => sum + priceNum(r.price), 0);
+    const totalLabel = priced.length
+      ? ` · about $${total.toFixed(2)}${priced.length < items.length ? "+" : ""}`
+      : "";
+    return `<div class="category-header">${storeLogo(store)} <span class="category-count">(${items.length} item${items.length === 1 ? "" : "s"}${totalLabel})</span></div>` +
       items.map(r => renderCard(r._source, r, false, false, "gotit")).join("");
   }).join("");
 }
@@ -1048,8 +1079,7 @@ function renderCard(tab, r, showMatch, hideCategory, buyMode) {
     ? `<span class="badge match-badge">Matches: ${esc(matched)}</span>` : "";
   // On the Shopping List nothing is filtered out - expired items are flagged instead,
   // so an item never silently vanishes from the list.
-  const expiredTag = (buyMode === "gotit" && isExpired(tab, r))
-    ? `<span class="badge expired-badge">expired?</span>` : "";
+  const expiredTag = expiryChip(tab, r);
   const addedBy = r.intending_to_buy_by
     ? ` · <span class="added-by">added by ${esc(r.intending_to_buy_by)}</span>` : "";
   if (tab === "weekly_deals") {
