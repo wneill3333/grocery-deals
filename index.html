@@ -866,9 +866,9 @@ function renderStorePlan(wantRows) {
   const f = plan.first;
   let html = `<div class="deal-card" style="border-left:4px solid var(--green);">
     <div class="deal-top"><span class="deal-item">🛒 Best store run</span></div>
-    <div class="deal-notes"><strong>${storeLogo(f.store)}</strong> covers <strong>${f.covered} of ${plan.totalWanted}</strong> list items (about ${money(f.total)}): ${f.items.map(i => esc(i.want)).join(", ")}</div>`;
+    <div class="deal-notes">${storeLogo(f.store)} <strong>${esc(f.store)}</strong> covers <strong>${f.covered} of ${plan.totalWanted}</strong> list items (about ${money(f.total)}): ${f.items.map(i => esc(i.want)).join(", ")}</div>`;
   if (plan.second) {
-    html += `<div class="deal-notes">Add <strong>${storeLogo(plan.second.store)}</strong> for ${plan.second.extraItems.map(i => esc(i.want) + (i.price !== null ? " (" + money(i.price) + ")" : "")).join(", ")}</div>`;
+    html += `<div class="deal-notes">Add ${storeLogo(plan.second.store)} <strong>${esc(plan.second.store)}</strong> for ${plan.second.extraItems.map(i => esc(i.want) + (i.price !== null ? " (" + money(i.price) + ")" : "")).join(", ")}</div>`;
   }
   if (plan.uncovered.length) {
     html += `<div class="deal-meta">Nothing on sale this week for: ${plan.uncovered.map(esc).join(", ")}</div>`;
