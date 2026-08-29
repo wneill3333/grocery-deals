@@ -733,10 +733,20 @@ async function refreshShopCount() {
 // Live want-list matching. Word boundaries keep "milk" from matching "MUSCLE MILK",
 // while still matching "almond milk" - which is what we want.
 function wantMatchers(wantRows) {
-  return (wantRows || []).map(w => ({
-    item: w.item,
-    re: new RegExp("\\b" + String(w.item || "").trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i")
-  })).filter(x => x.item);
+  const esc = t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return (wantRows || []).map(w => {
+    const raw = String(w.item || "").trim();
+    if (!raw) return null;
+    // Singular and plural are the same want: "sausage" finds "sausages", and
+    // "potatoes" finds "potato". Only the last word is stemmed, and only if it
+    // leaves something long enough to be meaningful.
+    const words = raw.split(/\s+/);
+    const last = words.pop();
+    const stem = last.replace(/(?:es|s)$/i, "");
+    const tail = stem.length >= 3 ? esc(stem) + "(?:e?s)?" : esc(last);
+    const pattern = words.map(esc).concat(tail).join("\\s+");
+    return { item: raw, re: new RegExp("\\b" + pattern + "\\b", "i") };
+  }).filter(Boolean);
 }
 
 function findMatch(matchers, text) {
