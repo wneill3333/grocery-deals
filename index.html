@@ -354,7 +354,10 @@ const SUPABASE_URL = "https://msvqftqcnianiwramndq.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_G52DGh6WwcFuq_IkH97OLQ_5f5Rb5M_";
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const STORES = ["WinCo","Stater Bros","Albertsons","Ralphs","Grocery Outlet","Vons","Walmart","Smart & Final","Sprouts Farmers Market","CVS","Walgreens"];
+const STORES = ["WinCo","Stater Bros","Albertsons","Ralphs","Grocery Outlet","Vons","Walmart","Smart & Final","Sprouts Farmers Market","CVS","Walgreens","El Super","Vallarta Supermarkets","Food 4 Less","ALDI","Target"];
+// Flipp uses slightly different merchant names for two stores we already track.
+const STORE_ALIASES = { "Stater Bros. Markets": "Stater Bros", "CVS Pharmacy": "CVS" };
+function canonicalStore(name) { return STORE_ALIASES[name] || name; }
 const CATEGORIES = ["Produce","Meat & Seafood","Dairy & Eggs","Bakery","Frozen","Pantry/Canned & Dry Goods","Beverages","Snacks","Household & Cleaning","Health & Beauty","Baby & Kids","Pet Supplies","Other"];
 const STORE_DOMAINS = {
   "WinCo": "wincofoods.com",
@@ -367,7 +370,12 @@ const STORE_DOMAINS = {
   "Smart & Final": "smartandfinal.com",
   "Sprouts Farmers Market": "sprouts.com",
   "CVS": "cvs.com",
-  "Walgreens": "walgreens.com"
+  "Walgreens": "walgreens.com",
+  "El Super": "elsupermarkets.com",
+  "Vallarta Supermarkets": "vallartasupermarkets.com",
+  "Food 4 Less": "food4less.com",
+  "ALDI": "aldi.us",
+  "Target": "target.com"
 };
 
 function handleLogoError(el) {
@@ -402,7 +410,8 @@ const logoPreloadPromise = (async function preloadStoreLogos() {
   })));
 })();
 
-function storeLogo(store) {
+function storeLogo(rawStore) {
+  const store = canonicalStore(rawStore);
   if (!store) return "";
   const domain = STORE_DOMAINS[store];
   if (!domain) return `<span class="store-logo-fallback">${esc(store)}</span>`;
@@ -775,10 +784,14 @@ function expiryChip(tab, r) {
 }
 
 function priceNum(v) {
-  // Weekly-ad prices are stored inconsistently: "$7.99 per lb.", "2.99", "0.99".
-  // Requiring a dollar sign silently ignored the cheapest ones, so the "best" pick
-  // was wrong (chicken showed $7.99 when $0.89 was on the shelf).
-  const m = String(v || "").match(/\$?\s?(\d+(?:\.\d{1,2})?)/);
+  const t = String(v || "");
+  // Multi-buy prices ("2 for $7", "2/$7", "2/ $7") mean $3.50 each — without this,
+  // the leading quantity is mistaken for the price.
+  const multi = t.match(/(\d+)\s*(?:for|\/)\s*\$?\s?(\d+(?:\.\d{1,2})?)/i);
+  if (multi && +multi[1] > 0) return Math.round((+multi[2] / +multi[1]) * 100) / 100;
+  // Otherwise: prices are stored inconsistently ("$7.99 per lb.", "2.99", "0.99") —
+  // take the first number, dollar sign optional.
+  const m = t.match(/\$?\s?(\d+(?:\.\d{1,2})?)/);
   return m ? parseFloat(m[1]) : null;
 }
 
@@ -799,6 +812,68 @@ function attachLiveBest(wantRows, weekly, coupons) {
     else best = deals[0] || null;
     return Object.assign({}, w, { _deals: deals, _best: best });
   });
+}
+
+// ---- Store Run planner -------------------------------------------------------
+// Answers the question the app was originally asked to answer: "which store(s)
+// should I actually go to?" Greedy set cover over the live want-list matches:
+// best single store by coverage (price total breaks ties), then the best partner
+// store for whatever the first one misses.
+function buildStorePlan(wantRows) {
+  const wanted = wantRows.filter(w => (w._deals || []).length);
+  if (!wanted.length) return null;
+  const byStore = new Map();
+  wanted.forEach(w => {
+    const bestPer = new Map();
+    (w._deals || []).forEach(d => {
+      const st = canonicalStore(d.store || "");
+      if (!st) return;
+      const p = priceNum(d.price) ?? priceNum(d.savings);
+      const cur = bestPer.get(st);
+      if (!cur || (p !== null && (cur.p === null || p < cur.p))) bestPer.set(st, { p, d });
+    });
+    bestPer.forEach((v, st) => {
+      if (!byStore.has(st)) byStore.set(st, { store: st, items: [] });
+      byStore.get(st).items.push({ want: w.item, price: v.p, deal: v.d });
+    });
+  });
+  const scored = [...byStore.values()].map(e => ({
+    ...e, covered: e.items.length,
+    total: e.items.reduce((s, i) => s + (i.price || 0), 0)
+  })).sort((a, b) => b.covered - a.covered || a.total - b.total);
+  const first = scored[0];
+  const got = new Set(first.items.map(i => i.want));
+  let second = null;
+  if (got.size < wanted.length) {
+    let bestExtra = 0;
+    scored.slice(1).forEach(e => {
+      const extra = e.items.filter(i => !got.has(i.want));
+      if (extra.length > bestExtra || (extra.length === bestExtra && bestExtra > 0 && second && e.total < second.total)) {
+        bestExtra = extra.length;
+        second = { ...e, extraItems: extra };
+      }
+    });
+  }
+  const covered2 = new Set([...got, ...(second ? second.extraItems.map(i => i.want) : [])]);
+  return { totalWanted: wanted.length, first, second,
+           uncovered: wanted.map(w => w.item).filter(x => !covered2.has(x)) };
+}
+
+function renderStorePlan(wantRows) {
+  const plan = buildStorePlan(wantRows);
+  if (!plan) return "";
+  const money = n => "$" + n.toFixed(2);
+  const f = plan.first;
+  let html = `<div class="deal-card" style="border-left:4px solid var(--green);">
+    <div class="deal-top"><span class="deal-item">🛒 Best store run</span></div>
+    <div class="deal-notes"><strong>${storeLogo(f.store)}</strong> covers <strong>${f.covered} of ${plan.totalWanted}</strong> list items (about ${money(f.total)}): ${f.items.map(i => esc(i.want)).join(", ")}</div>`;
+  if (plan.second) {
+    html += `<div class="deal-notes">Add <strong>${storeLogo(plan.second.store)}</strong> for ${plan.second.extraItems.map(i => esc(i.want) + (i.price !== null ? " (" + money(i.price) + ")" : "")).join(", ")}</div>`;
+  }
+  if (plan.uncovered.length) {
+    html += `<div class="deal-meta">Nothing on sale this week for: ${plan.uncovered.map(esc).join(", ")}</div>`;
+  }
+  return html + `</div>`;
 }
 
 function activateTab(tab) {
@@ -995,7 +1070,7 @@ async function loadData() {
   }
 
   if (currentTab === "want_list") {
-    resultsEl.innerHTML = renderWantListGrouped(rows);
+    resultsEl.innerHTML = renderStorePlan(rows) + renderWantListGrouped(rows);
   } else if (currentTab === "shopping_list") {
     resultsEl.innerHTML = renderShoppingListGrouped(rows);
   } else {
