@@ -171,7 +171,57 @@ the redaction.
 
 ---
 
-## Weekly ads — these are IMAGE FLYERS, not scrapable pages (established 2026-08-28)
+## Weekly ads, PART B procedure — do the FLIPP API PASS first (validated end-to-end 2026-08-28)
+
+Flipp aggregates every local circular and exposes a **structured JSON search API** — no
+login, no scraping, and it covers the stores that are blocked everywhere else (Stater
+Bros, Grocery Outlet, CVS). One validated pass produced **145 rows across 19 stores** and
+improved the "Best now" pick for nearly every Want List item (found the $4.95 USDA Choice
+brisket the flyer-reading pass had missed, and a BOGO on eggs at Ralphs).
+
+### The recipe (mechanical — follow exactly)
+
+1. Navigate to `https://flipp.com/search/milk` (any search page). If a cookie banner
+   appears, click **"Save My Preferences"** — the toggles default to off, so this
+   declines everything non-essential. Wait ~10 s for the SPA to load.
+2. From that page's context (CORS requires it — the API cannot be called from the app
+   tab), fetch for EACH want-list term, lowercased, ~400 ms apart:
+   `https://cdn-gateflipp.flippback.com/bf/flipp/items/search?locale=en-us&postal_code=92054&sid=&q=<term>`
+   The response's `items[]` carry: `name`, `merchant_name`, `current_price`,
+   `original_price`, `pre_price_text` ("2 for"), `post_price_text` ("Member Price",
+   "With Card"), `sale_story` ("save up to 50%"), `valid_from`, `valid_to`,
+   `clipping_image_url`.
+3. Keep an item only if: `name` is non-empty, AND every word of the query (stemmed —
+   strip trailing s/es) appears in the lowercased name, AND it has a `current_price` or a
+   `sale_story`. This drops the dog food that "milk" returns and the empty
+   Frazier Farms placeholders.
+4. Drop non-grocery merchants: Kohl's, Five Below, Lowe's, Home Depot, JCPenney, Menards,
+   Big Lots. (Keep Target, ALDI, El Super, Vallarta, Food 4 Less — they sell groceries
+   and Flipp's zip-92054 results for them are real.)
+5. Build weekly_deals rows: `store` = merchant_name; `item` = name; `price` — if
+   `pre_price_text` is "N for", compute the unit price and write `"$X.XX (N for $Y)"`
+   (a raw "2 for $7" string makes the app's price parser read $2); otherwise
+   `"$" + current_price`, or the sale_story when there is no price; `sale_start`/`sale_end`
+   = valid_from/valid_to (first 10 chars); `notes` = post_price_text · "was $original" ·
+   sale_story, joined; `source` = **'Flipp'** (the source CHECK constraint allows it);
+   `source_url` = `https://flipp.com/search/<term>`; `category` via the keyword map
+   (rib/brisket/roast/chicken/sausage→Meat & Seafood, milk/egg/cheese→Dairy & Eggs,
+   bagel/bread→Bakery, squash/mushroom/onion/potato/garlic→Produce, else Other);
+   `date_pulled` = today. NEVER include id/dedup_key/intending_to_buy/…/clipped.
+6. Dedupe client-side on `store|item|sale_end` lowercased, store to `window.name` as
+   JSON (**the relay DOES survive flipp.com → the app**, unlike sprouts), navigate the
+   tab to the app, `upsert(…, { onConflict: 'dedup_key' })` in batches of 100.
+7. Report per-term counts. 2026-08-28 baseline: chicken 78→71 kept, sausage 32→28,
+   milk 22→18, eggs 20→18, potatoes 9→5, onions 4, garlic 2, mushrooms 2, brisket 2,
+   bagels 2, butt roast 1, baby back pork ribs 0, butternut squash 0. A term returning
+   far less than baseline is a warning to report, not a reason to retry.
+
+This pass takes ~5 minutes and replaces most of the flyer reading. After it, read actual
+flyers only if time remains, mainly for NOTABLE front-page deals the item search
+doesn't surface (see below).
+
+## Reading flyers by eye — the fallback and the "notable deals" pass
+
 
 **Do not try to write a DOM extractor for weekly ads. There is nothing to extract.** Two
 independent stores were investigated in depth and both serve their ad as page *images*:
